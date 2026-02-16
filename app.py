@@ -16,111 +16,172 @@ if st.button("Predict"):
     prediction = model.predict(input_data)
     st.success(f"Predicted Final Score: {prediction[0]:.2f}")
 
+
 import streamlit as st
-import pickle
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
+import pickle
+import plotly.express as px
+import os
 
 # ===========================
-# Load Model
+# Setup
 # ===========================
+st.set_page_config(page_title="Academy Dashboard", layout="wide", page_icon="??")
+
+# ===========================
+# Load or Initialize Data
+# ===========================
+DATA_FILE = "students.csv"
+
+if os.path.exists(DATA_FILE):
+    df = pd.read_csv(DATA_FILE)
+else:
+    # Create empty dataframe if CSV doesn't exist
+    df = pd.DataFrame(columns=['StudentID','Name','StudyHours','Attendance','AssignmentScore','MidtermScore','FinalScore'])
+    df.to_csv(DATA_FILE, index=False)
+
+# Load ML model
 model = pickle.load(open("model.pkl", "rb"))
 
 # ===========================
-# Page Configuration
+# Login System
 # ===========================
-st.set_page_config(page_title="Student Performance Dashboard", layout="wide")
+st.sidebar.title("?? Login")
+# For demo, a simple dictionary
+users = {"admin": "admin123", "teacher": "teach2026"}
+username = st.sidebar.text_input("Username")
+password = st.sidebar.text_input("Password", type="password")
 
-# ===========================
-# Custom CSS
-# ===========================
-st.markdown("""
-<style>
-body {
-    background-color: #f0f2f6;
-}
-h1 {
-    color: #1F4E79;
-    font-size: 36px;
-    font-weight: bold;
-}
-.card {
-    background-color: #ADD8E6;
-    padding: 15px;
-    border-radius: 10px;
-    text-align: center;
-    margin-bottom: 20px;
-}
-</style>
-""", unsafe_allow_html=True)
+login = st.sidebar.button("Login")
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 
-# ===========================
-# Title
-# ===========================
-st.title("?? Student Performance Prediction Dashboard")
-
-# ===========================
-# Sidebar Inputs
-# ===========================
-st.sidebar.header("Input Student Data")
-study_hours = st.sidebar.number_input("Study Hours", min_value=0, max_value=20, value=5)
-attendance = st.sidebar.number_input("Attendance (%)", min_value=0, max_value=100, value=80)
-assignment_score = st.sidebar.number_input("Assignment Score", min_value=0, max_value=100, value=75)
-midterm_score = st.sidebar.number_input("Midterm Score", min_value=0, max_value=100, value=70)
-
-# ===========================
-# Tabs for Dashboard
-# ===========================
-tab1, tab2, tab3 = st.tabs(["Prediction", "Charts", "Summary"])
-
-# --------- TAB 1: Prediction ---------
-with tab1:
-    st.subheader("?? Predicted Final Score")
-    input_data = np.array([[study_hours, attendance, assignment_score, midterm_score]])
-    prediction = model.predict(input_data)
-    st.markdown(f"""
-    <div class="card">
-    <h2>Predicted Final Score: {prediction[0]:.2f}</h2>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Risk Analysis
-    if prediction[0] < 50:
-        st.warning("? Student is at risk of failing")
-    elif prediction[0] < 70:
-        st.info("? Student is below average")
+if login:
+    if username in users and password == users[username]:
+        st.session_state.logged_in = True
+        st.success(f"Welcome {username}!")
     else:
-        st.success("? Student is performing well")
+        st.error("? Invalid username or password")
 
-# --------- TAB 2: Charts ---------
-with tab2:
+# Stop app if not logged in
+if not st.session_state.logged_in:
+    st.stop()
+
+# ===========================
+# Sidebar Navigation
+# ===========================
+menu = st.sidebar.radio("Menu", ["Dashboard","Add Student","Update Student","Delete Student","Predict Final Score"])
+
+# ===========================
+# DASHBOARD
+# ===========================
+if menu == "Dashboard":
+    st.title("?? Academy Dashboard")
+    
+    # KPIs
+    total_students = df.shape[0]
+    avg_score = df['FinalScore'].mean() if total_students>0 else 0
+    max_score = df['FinalScore'].max() if total_students>0 else 0
+    min_score = df['FinalScore'].min() if total_students>0 else 0
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Students", total_students)
+    col2.metric("Average Score", f"{avg_score:.2f}")
+    col3.metric("Highest Score", max_score)
+    col4.metric("Lowest Score", min_score)
+    
+    # Charts
     st.subheader("?? Feature Correlation")
+    if total_students>0:
+        fig = px.imshow(df[['StudyHours','Attendance','AssignmentScore','MidtermScore','FinalScore']].corr(), text_auto=True)
+        st.plotly_chart(fig)
     
-    # Dummy dataset for visualization (replace with your dataset)
-    data = pd.DataFrame({
-        "study_hours": np.random.randint(1,10,100),
-        "attendance": np.random.randint(50,100,100),
-        "assignment_score": np.random.randint(40,100,100),
-        "midterm_score": np.random.randint(30,100,100),
-        "final_score": np.random.randint(40,100,100)
-    })
+    st.subheader("?? Student Scores")
+    if total_students>0:
+        fig2 = px.bar(df, x='Name', y='FinalScore', color='FinalScore', color_continuous_scale='Viridis')
+        st.plotly_chart(fig2)
     
-    fig, ax = plt.subplots()
-    sns.heatmap(data.corr(), annot=True, cmap="coolwarm", ax=ax)
-    st.pyplot(fig)
-    
-    st.subheader("?? Feature Distributions")
-    fig2, ax2 = plt.subplots()
-    data[['study_hours','attendance','assignment_score','midterm_score']].hist(ax=ax2, figsize=(10,4))
-    st.pyplot(fig2)
+    st.subheader("?? Student Data Table")
+    st.dataframe(df)
 
-# --------- TAB 3: Summary ---------
-with tab3:
-    st.subheader("?? Summary Statistics")
-    st.dataframe(data.describe())
-    
-    st.markdown("**Average Final Score:** {:.2f}".format(data['final_score'].mean()))
-    st.markdown("**Highest Final Score:** {:.2f}".format(data['final_score'].max()))
-    st.markdown("**Lowest Final Score:** {:.2f}".format(data['final_score'].min()))
+# ===========================
+# ADD STUDENT
+# ===========================
+elif menu == "Add Student":
+    st.title("? Add New Student")
+    with st.form("add_student_form"):
+        student_id = st.text_input("Student ID")
+        name = st.text_input("Name")
+        study_hours = st.number_input("Study Hours", 0, 20, 5)
+        attendance = st.number_input("Attendance (%)", 0, 100, 80)
+        assignment_score = st.number_input("Assignment Score", 0, 100, 70)
+        midterm_score = st.number_input("Midterm Score", 0, 100, 70)
+        submitted = st.form_submit_button("Add Student")
+        if submitted:
+            final_score = model.predict(np.array([[study_hours, attendance, assignment_score, midterm_score]]))[0]
+            new_row = {'StudentID': student_id, 'Name': name, 'StudyHours': study_hours,
+                       'Attendance': attendance, 'AssignmentScore': assignment_score,
+                       'MidtermScore': midterm_score, 'FinalScore': final_score}
+            df = df.append(new_row, ignore_index=True)
+            df.to_csv(DATA_FILE, index=False)
+            st.success(f"? Student {name} added with predicted final score: {final_score:.2f}")
+
+# ===========================
+# UPDATE STUDENT
+# ===========================
+elif menu == "Update Student":
+    st.title("?? Update Student")
+    student_id = st.text_input("Enter Student ID to Update")
+    if student_id:
+        if student_id in df['StudentID'].values:
+            student_row = df[df['StudentID']==student_id]
+            st.write("Current Data:")
+            st.dataframe(student_row)
+            
+            with st.form("update_student_form"):
+                study_hours = st.number_input("Study Hours", 0, 20, int(student_row['StudyHours'].values[0]))
+                attendance = st.number_input("Attendance (%)", 0, 100, int(student_row['Attendance'].values[0]))
+                assignment_score = st.number_input("Assignment Score", 0, 100, int(student_row['AssignmentScore'].values[0]))
+                midterm_score = st.number_input("Midterm Score", 0, 100, int(student_row['MidtermScore'].values[0]))
+                submitted = st.form_submit_button("Update Student")
+                if submitted:
+                    final_score = model.predict(np.array([[study_hours, attendance, assignment_score, midterm_score]]))[0]
+                    df.loc[df['StudentID']==student_id, ['StudyHours','Attendance','AssignmentScore','MidtermScore','FinalScore']] = \
+                        [study_hours, attendance, assignment_score, midterm_score, final_score]
+                    df.to_csv(DATA_FILE, index=False)
+                    st.success(f"? Student {student_id} updated with new final score: {final_score:.2f}")
+        else:
+            st.error("? Student ID not found")
+
+# ===========================
+# DELETE STUDENT
+# ===========================
+elif menu == "Delete Student":
+    st.title("?? Delete Student")
+    student_id = st.text_input("Enter Student ID to Delete")
+    if st.button("Delete"):
+        if student_id in df['StudentID'].values:
+            df = df[df['StudentID'] != student_id]
+            df.to_csv(DATA_FILE, index=False)
+            st.success(f"? Student {student_id} deleted")
+        else:
+            st.error("? Student ID not found")
+
+# ===========================
+# PREDICT FINAL SCORE
+# ===========================
+elif menu == "Predict Final Score":
+    st.title("?? Predict Student Final Score")
+    study_hours = st.number_input("Study Hours", 0, 20, 5)
+    attendance = st.number_input("Attendance (%)", 0, 100, 80)
+    assignment_score = st.number_input("Assignment Score", 0, 100, 70)
+    midterm_score = st.number_input("Midterm Score", 0, 100, 70)
+    if st.button("Predict"):
+        final_score = model.predict(np.array([[study_hours, attendance, assignment_score, midterm_score]]))[0]
+        if final_score < 50:
+            st.error(f"? Predicted Final Score: {final_score:.2f} - At Risk")
+        elif final_score < 70:
+            st.warning(f"? Predicted Final Score: {final_score:.2f} - Below Average")
+        else:
+            st.success(f"? Predicted Final Score: {final_score:.2f} - Good Performance")
